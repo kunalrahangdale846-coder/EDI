@@ -9,6 +9,7 @@ export const ROUTES = {
   HOME: "/",
   LOGIN: "/login",
   DASHBOARD: "/dashboard",
+  EVALUATION_SECTION: "/evaluation-section",
   CREATE_HACKATHON: "/create-hackathon",
   SUBMIT_PROJECT: "/submit-project",
   EVALUATION_REPORT: "/evaluation-report",
