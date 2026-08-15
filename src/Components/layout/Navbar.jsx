@@ -32,6 +32,9 @@ function Navbar() {
           {user && (
             <>
               <Link to={ROUTES.DASHBOARD} className="hover:text-slate-900">Dashboard</Link>
+              <Link to={ROUTES.EVALUATION_SECTION} className="hover:text-slate-900">
+                Evaluation
+              </Link>
 
               {user.role === ROLES.ORGANIZER && (
                 <Link to={ROUTES.CREATE_HACKATHON} className="hover:text-slate-900">

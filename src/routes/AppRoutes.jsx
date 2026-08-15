@@ -7,6 +7,7 @@ import HackathonRegister from "../Components/hackathon/HackathonRegister.jsx";
 import Landing from "../pages/Landing.jsx";
 import Login from "../pages/Login.jsx";
 import Dashboard from "../pages/Dashboard.jsx";
+import EvaluationSection from "../pages/EvaluationSection.jsx";
 
 // TODO(teammates): swap these placeholders for the real page components
 // as CreateHackathon.jsx, SubmitProject.jsx, EvaluationReport.jsx,
@@ -44,6 +45,14 @@ function AppRoutes() {
         element={
           <ProtectedRoute>
             <Dashboard />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path={ROUTES.EVALUATION_SECTION}
+        element={
+          <ProtectedRoute>
+            <EvaluationSection />
           </ProtectedRoute>
         }
       />
