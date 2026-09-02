@@ -8,6 +8,7 @@ export const ROLES = {
 export const ROUTES = {
   HOME: "/",
   LOGIN: "/login",
+  HACKATHONS: "/hackathons",
   DASHBOARD: "/dashboard",
   EVALUATION_SECTION: "/evaluation-section",
   CREATE_HACKATHON: "/create-hackathon",
