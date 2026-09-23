@@ -1,13 +1,9 @@
-import { createContext, useState, useEffect } from "react";
-
-export const AuthContext = createContext(null);
-
-// NOTE: This is a local/mock auth for the static frontend stage.
-// Once the backend (authService.js) is ready, replace login()/signup()
-// bodies with real API calls and keep the same context shape so
-// components using useAuth() don't need to change.
+import { useState, useEffect } from "react";
+import { loginUser, registerUser } from "../services/authService.js";
+import { AuthContext } from "./authContext.js";
 
 const STORAGE_KEY = "devcollab_user";
+const TOKEN_KEY = "devcollab_token";
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -27,17 +23,27 @@ export function AuthProvider({ children }) {
   };
 
   // role: "organizer" | "student"
-  const login = ({ name, email, role }) => {
-    persist({ name: name || email.split("@")[0], email, role });
+  const login = async ({ email, password }) => {
+    const response = await loginUser({ email, password });
+    persist(response.user);
+    localStorage.setItem(TOKEN_KEY, response.token);
   };
 
-  const signup = ({ name, email, role }) => {
-    persist({ name, email, role });
+  const signup = async ({ name, email, password, role }) => {
+    const response = await registerUser({
+      name,
+      email,
+      password,
+      role: role === "student" ? "PARTICIPANT" : "ORGANIZER",
+    });
+    persist(response.user);
+    localStorage.setItem(TOKEN_KEY, response.token);
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(TOKEN_KEY);
   };
 
   return (

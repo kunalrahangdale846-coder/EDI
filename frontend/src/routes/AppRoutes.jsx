@@ -8,19 +8,12 @@ import Landing from "../pages/Landing.jsx";
 import Login from "../pages/Login.jsx";
 import Dashboard from "../pages/Dashboard.jsx";
 import EvaluationSection from "../pages/EvaluationSection.jsx";
-
-// TODO(teammates): swap these placeholders for the real page components
-// as CreateHackathon.jsx, SubmitProject.jsx, EvaluationReport.jsx,
-// Leaderboard.jsx and Profile.jsx get built. Keep the paths as-is so
-// the Navbar links keep working.
-function ComingSoon({ title }) {
-  return (
-    <div className="max-w-6xl mx-auto px-4 py-16 text-center text-slate-500">
-      <p className="text-lg font-medium text-slate-700">{title}</p>
-      <p className="text-sm mt-1">This page is still being built.</p>
-    </div>
-  );
-}
+import CreateHackathon from "../pages/CreateHackathon.jsx";
+import SubmitProject from "../pages/SubmitProject.jsx";
+import EvaluationReport from "../pages/EvaluationReport.jsx";
+import Leaderboard from "../pages/Leaderboard.jsx";
+import Profile from "../pages/Profile.jsx";
+import OrganizerProfile from "../pages/OrganizerProfile.jsx";
 
 // Wrap any page that should only be visible to a logged-in user.
 function ProtectedRoute({ children }) {
@@ -39,6 +32,7 @@ function AppRoutes() {
       <Route path="/hackathons" element={<HackathonHome />} />
       <Route path="/hackathons/:id" element={<HackathonDetails />} />
       <Route path="/hackathons/:id/register" element={<HackathonRegister />} />
+      <Route path="/organizers/:userId" element={<OrganizerProfile />} />
 
       <Route
         path={ROUTES.DASHBOARD}
@@ -59,21 +53,21 @@ function AppRoutes() {
 
       <Route
         path={ROUTES.CREATE_HACKATHON}
-        element={<ComingSoon title="Create Hackathon" />}
+        element={<ProtectedRoute><CreateHackathon /></ProtectedRoute>}
       />
       <Route
         path={ROUTES.SUBMIT_PROJECT}
-        element={<ComingSoon title="Submit Project" />}
+        element={<ProtectedRoute><SubmitProject /></ProtectedRoute>}
       />
       <Route
         path={ROUTES.EVALUATION_REPORT}
-        element={<ComingSoon title="Evaluation Report" />}
+        element={<ProtectedRoute><EvaluationReport /></ProtectedRoute>}
       />
       <Route
         path={ROUTES.LEADERBOARD}
-        element={<ComingSoon title="Leaderboard" />}
+        element={<Leaderboard />}
       />
-      <Route path={ROUTES.PROFILE} element={<ComingSoon title="Profile" />} />
+      <Route path={ROUTES.PROFILE} element={<ProtectedRoute><Profile /></ProtectedRoute>} />
 
       <Route path="*" element={<Navigate to={ROUTES.HOME} replace />} />
     </Routes>

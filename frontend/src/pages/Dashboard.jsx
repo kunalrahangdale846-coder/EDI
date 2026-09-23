@@ -1,25 +1,19 @@
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Card from "../components/common/Card.jsx";
 import Button from "../components/common/Button.jsx";
 import { useAuth } from "../hooks/useAuth.js";
 import { ROLES, ROUTES } from "../utils/constants.js";
-
-// Mock data for the static-frontend stage. Replace with calls to
-// hackathonService.js / submissionService.js once the backend exists.
-const MOCK_TEAMS = [
-  { team: "Byte Busters", members: 4, registered: true, submitted: true },
-  { team: "Null Pointers", members: 3, registered: true, submitted: false },
-  { team: "Stack Overflow", members: 4, registered: true, submitted: true },
-  { team: "Kernel Panic", members: 2, registered: true, submitted: false },
-];
-
-const MOCK_STUDENT_HACKATHONS = [
-  { hackathon: "CampusHacks 2026", status: "Submitted", score: "82 / 100" },
-  { hackathon: "InnovateX", status: "Not submitted", score: "—" },
-];
+import { api } from "../services/api.js";
 
 function OrganizerView() {
-  const submittedCount = MOCK_TEAMS.filter((t) => t.submitted).length;
+  const [evaluations, setEvaluations] = useState([]);
+
+  useEffect(() => {
+    api.getOrganizerWorkflowEvaluations().then(setEvaluations).catch(() => setEvaluations([]));
+  }, []);
+
+  const submittedCount = evaluations.length;
 
   return (
     <>
@@ -33,7 +27,7 @@ function OrganizerView() {
       <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
         <Card>
           <p className="text-sm text-slate-500">Registered teams</p>
-          <p className="text-2xl font-semibold text-slate-900">{MOCK_TEAMS.length}</p>
+          <p className="text-2xl font-semibold text-slate-900">{evaluations.length}</p>
         </Card>
         <Card>
           <p className="text-sm text-slate-500">Submitted</p>
@@ -42,7 +36,7 @@ function OrganizerView() {
         <Card>
           <p className="text-sm text-slate-500">Pending submission</p>
           <p className="text-2xl font-semibold text-slate-900">
-            {MOCK_TEAMS.length - submittedCount}
+            {0}
           </p>
         </Card>
       </div>
@@ -54,18 +48,18 @@ function OrganizerView() {
             <thead className="bg-slate-50 text-slate-500">
               <tr>
                 <th className="px-4 py-2">Team</th>
-                <th className="px-4 py-2">Members</th>
-                <th className="px-4 py-2">Registered</th>
-                <th className="px-4 py-2">Submitted</th>
+                <th className="px-4 py-2">Passed</th>
+                <th className="px-4 py-2">Pass rate</th>
+                <th className="px-4 py-2">Functionality</th>
               </tr>
             </thead>
             <tbody>
-              {MOCK_TEAMS.map((t) => (
-                <tr key={t.team} className="border-t border-slate-200">
-                  <td className="px-4 py-2">{t.team}</td>
-                  <td className="px-4 py-2">{t.members}</td>
-                  <td className="px-4 py-2">{t.registered ? "Yes" : "No"}</td>
-                  <td className="px-4 py-2">{t.submitted ? "Yes" : "No"}</td>
+              {evaluations.map((evaluation) => (
+                  <tr key={evaluation.submission_id} className="border-t border-slate-200">
+                    <td className="px-4 py-2">{evaluation.team_name}</td>
+                    <td className="px-4 py-2">{evaluation.passed_tests} / {evaluation.total_tests}</td>
+                    <td className="px-4 py-2">{evaluation.pass_rate}%</td>
+                    <td className="px-4 py-2">{evaluation.weighted_score} / 30</td>
                 </tr>
               ))}
             </tbody>
@@ -77,6 +71,22 @@ function OrganizerView() {
 }
 
 function StudentView() {
+  const [participations, setParticipations] = useState([]);
+  const [problems, setProblems] = useState({});
+  const [teamName, setTeamName] = useState("");
+  const [message, setMessage] = useState("");
+
+  useEffect(() => {
+    api.getStudentHackathons().then(async (items) => { setParticipations(items); const entries = await Promise.all(items.map(async (item) => [item.id, await api.getProblemStatements(item.id)])); setProblems(Object.fromEntries(entries)); }).catch(() => setParticipations([]));
+  }, []);
+
+  const createTeam = async (hackathonId) => {
+    if (!teamName.trim()) return;
+    try { await api.createWorkflowTeam(hackathonId, teamName); setMessage("Team created. Select a problem before submitting."); const items = await api.getStudentHackathons(); setParticipations(items); setTeamName(""); } catch (error) { setMessage(error.message); }
+  };
+
+  const selectProblem = async (teamId, problemId) => { try { await api.selectTeamProblem(teamId, Number(problemId)); const items = await api.getStudentHackathons(); setParticipations(items); setMessage("Problem selection saved."); } catch (error) { setMessage(error.message); } };
+
   return (
     <>
       <div className="flex items-center justify-between">
@@ -96,16 +106,19 @@ function StudentView() {
             </tr>
           </thead>
           <tbody>
-            {MOCK_STUDENT_HACKATHONS.map((h) => (
-              <tr key={h.hackathon} className="border-t border-slate-200">
-                <td className="px-4 py-2">{h.hackathon}</td>
-                <td className="px-4 py-2">{h.status}</td>
-                <td className="px-4 py-2">{h.score}</td>
+            {participations.map((item) => (
+              <tr key={item.id} className="border-t border-slate-200">
+                <td className="px-4 py-2">{item.name} ({item.contest_id})</td>
+                <td className="px-4 py-2">{item.submission_status || "Registered"}</td>
+                <td className="px-4 py-2">{item.functionality_weighted == null ? "Not evaluated yet" : `${item.functionality_weighted} / 30`}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {participations.filter((item) => !item.team_id).map((item) => <div key={item.id} className="mt-4 flex gap-2"><input value={teamName} onChange={(event) => setTeamName(event.target.value)} placeholder={`Team name for ${item.name}`} className="flex-1 rounded border p-3" /><button onClick={() => createTeam(item.id)} className="rounded bg-black px-4 py-3 text-white">Create team</button></div>)}
+      {participations.filter((item) => item.team_id && !item.problem_id).map((item) => <div key={`problem-${item.id}`} className="mt-4 flex gap-2"><select defaultValue="" onChange={(event) => selectProblem(item.team_db_id || item.team_id, event.target.value)} className="flex-1 rounded border p-3"><option value="">Select problem for {item.team_name}</option>{(problems[item.id] || []).map((problem) => <option key={problem.id} value={problem.id}>{problem.problem_id} · {problem.title}</option>)}</select></div>)}
+      {message && <p className="mt-4 text-sm text-slate-600">{message}</p>}
     </>
   );
 }

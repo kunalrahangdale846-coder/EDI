@@ -13,6 +13,8 @@ function Login() {
     password: "",
     role: ROLES.STUDENT,
   });
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { login, signup } = useAuth();
   const navigate = useNavigate();
 
@@ -20,16 +22,27 @@ function Login() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // No backend yet - this just sets the local session so the
-    // Dashboard has a real role to branch on.
-    if (mode === "login") {
-      login({ email: form.email, role: form.role });
-    } else {
-      signup({ name: form.name, email: form.email, role: form.role });
+    setError("");
+    setSubmitting(true);
+    try {
+      if (mode === "login") {
+        await login({ email: form.email, password: form.password });
+      } else {
+        await signup({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          role: form.role,
+        });
+      }
+      navigate(ROUTES.DASHBOARD);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmitting(false);
     }
-    navigate(ROUTES.DASHBOARD);
   };
 
   return (
@@ -116,8 +129,9 @@ function Login() {
         </div>
 
         <Button type="submit" variant="primary" className="mt-2">
-          {mode === "login" ? "Log in" : "Sign up"}
+          {submitting ? "Connecting..." : mode === "login" ? "Log in" : "Sign up"}
         </Button>
+        {error && <p className="text-sm text-red-700">{error}</p>}
       </form>
     </div>
   );
