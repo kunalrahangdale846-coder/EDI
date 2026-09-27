@@ -963,31 +963,48 @@ def re_evaluate_submission(submission_id: str, user: dict = Depends(current_user
         sub = fetch_one("SELECT * FROM workflow_submissions WHERE submission_id = :id", {"id": submission_id})
     if not sub:
         raise HTTPException(404, "submission not found")
-    
+
+    # Resolve ZIP path: try stored path first, then UPLOAD_DIR, then LOCAL_UPLOADS fallback
     file_path = Path(sub["file_path"]) if sub.get("file_path") else None
     if not file_path or not file_path.exists():
         candidate = UPLOAD_DIR / f"{sub['submission_id']}.zip"
+        local_candidate = LOCAL_UPLOADS / f"{sub['submission_id']}.zip"
         if candidate.exists():
             file_path = candidate
-        elif (LOCAL_UPLOADS / f"{sub['submission_id']}.zip").exists():
-            file_path = LOCAL_UPLOADS / f"{sub['submission_id']}.zip"
+        elif local_candidate.exists():
+            file_path = local_candidate
         else:
-            raise HTTPException(404, f"Submission ZIP file not found for {sub['submission_id']}")
-    
+            raise HTTPException(
+                404,
+                f"ZIP not found for {sub['submission_id']}. "
+                f"Checked: {sub.get('file_path')}, {candidate}, {local_candidate}"
+            )
+        # Persist the resolved path so next call finds it directly
+        execute(
+            "UPDATE workflow_submissions SET file_path = :fp WHERE id = :id",
+            {"fp": str(file_path), "id": sub["id"]},
+        )
+
+    # Mark as evaluating
+    execute("UPDATE workflow_submissions SET submission_status = 'EVALUATING' WHERE id = :id", {"id": sub["id"]})
+
     workspace = WORKSPACE_DIR / str(sub["id"])
     if workspace.exists():
         shutil.rmtree(workspace, ignore_errors=True)
     workspace.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         with zipfile.ZipFile(file_path) as archive:
             archive.extractall(workspace)
         result = evaluate_workflow_submission(sub, workspace)
         stored = store_workflow_evaluation(sub, result)
-        return {**sub, **stored}
-    except Exception as e:
+        return {**dict(sub), **stored}
+    except HTTPException:
         execute("UPDATE workflow_submissions SET submission_status = 'EVALUATION_FAILED' WHERE id = :id", {"id": sub["id"]})
-        raise HTTPException(422, f"Re-evaluation failed: {e}")
+        raise
+    except Exception as exc:
+        execute("UPDATE workflow_submissions SET submission_status = 'EVALUATION_FAILED' WHERE id = :id", {"id": sub["id"]})
+        raise HTTPException(422, f"Re-evaluation failed: {exc}") from exc
     finally:
         if workspace.exists():
             shutil.rmtree(workspace, ignore_errors=True)

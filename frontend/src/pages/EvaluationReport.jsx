@@ -22,23 +22,27 @@ function EvaluationReport() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    // Load student's recent submissions for 1-click lookup
-    api.getStudentSubmissions()
-      .then((items) => setRecentSubmissions(items || []))
+    api
+      .getStudentSubmissions()
+      .then((items) => {
+        if (Array.isArray(items)) setRecentSubmissions(items);
+      })
       .catch(() => {});
   }, []);
 
   const loadReport = async (idToLoad) => {
-    const id = idToLoad || submissionId;
+    const id = String(idToLoad || submissionId).trim();
     if (!id) return;
     setLoading(true);
     setError("");
+    setData(null);
     try {
       const res = await api.getWorkflowReport(id);
+      if (!res || typeof res !== "object") throw new Error("Invalid response from server");
       setData(res);
       setSubmissionId(id);
     } catch (err) {
-      setError(err.message || "Failed to load evaluation report");
+      setError(err?.message || "Failed to load evaluation report");
       setData(null);
     } finally {
       setLoading(false);
@@ -46,31 +50,41 @@ function EvaluationReport() {
   };
 
   const handleReEvaluate = async () => {
-    if (!data?.submission?.id) return;
+    const subId = data?.submission?.id || data?.submission?.submission_id;
+    if (!subId) return;
     setReEvaluating(true);
+    setError("");
     try {
-      await api.reEvaluateSubmission(data.submission.id);
-      await loadReport(data.submission.id);
+      await api.reEvaluateSubmission(subId);
+      await loadReport(data?.submission?.submission_id || subId);
     } catch (err) {
-      setError(err.message || "Re-evaluation failed");
+      setError(err?.message || "Re-evaluation failed. Check that the backend is running.");
     } finally {
       setReEvaluating(false);
     }
   };
 
+  // Safe parsing of details JSON
   let details = null;
-  if (data?.evaluation?.details_json) {
-    try {
+  try {
+    if (data?.evaluation?.details_json) {
       details = JSON.parse(data.evaluation.details_json);
-    } catch {
-      details = null;
     }
+  } catch {
+    details = null;
   }
 
-  const func = details?.functionality;
-  const cq = details?.code_quality;
-  const evalRow = data?.evaluation;
-  const sub = data?.submission;
+  const func = details?.functionality ?? null;
+  const cq = details?.code_quality ?? null;
+  const evalRow = data?.evaluation ?? null;
+  const sub = data?.submission ?? null;
+
+  const statusColor = (status) => {
+    if (status === "EVALUATED") return "bg-green-100 text-green-700";
+    if (status === "EVALUATION_FAILED") return "bg-red-100 text-red-700";
+    if (status === "EVALUATING") return "bg-yellow-100 text-yellow-700";
+    return "bg-slate-100 text-slate-600";
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -108,45 +122,56 @@ function EvaluationReport() {
             </button>
           </form>
 
-          {/* Quick chips from user's submissions */}
+          {/* Quick chips from user's recent submissions */}
           {recentSubmissions.length > 0 && (
             <div className="mt-4 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-400 font-medium">Your Submissions:</span>
-              {recentSubmissions.slice(0, 5).map((s) => (
-                <button
-                  key={s.submission_id}
-                  onClick={() => loadReport(s.id || s.submission_id)}
-                  className="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 px-2.5 py-1 rounded-md transition-colors font-mono"
-                >
-                  {s.submission_id} ({s.team_name})
-                </button>
-              ))}
+              {recentSubmissions.slice(0, 6).map((s, idx) => {
+                const chipId = s?.submission_id || s?.id;
+                const chipLabel = s?.submission_id || `#${s?.id}`;
+                const teamName = s?.team_name || "";
+                if (!chipId) return null;
+                return (
+                  <button
+                    key={chipId || idx}
+                    onClick={() => loadReport(chipId)}
+                    className="text-xs bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-700 px-2.5 py-1 rounded-md transition-colors font-mono"
+                  >
+                    {chipLabel}{teamName ? ` (${teamName})` : ""}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
+        {/* Error banner */}
         {error && (
           <div className="mb-6 bg-red-50 border border-red-200 text-red-700 px-5 py-3 rounded-xl text-sm flex items-center justify-between">
-            <span>{error}</span>
-            <button onClick={() => setError("")} className="text-red-500 hover:text-red-700">✕</button>
+            <span>⚠️ {error}</span>
+            <button onClick={() => setError("")} className="text-red-400 hover:text-red-700 ml-4 font-bold">✕</button>
+          </div>
+        )}
+
+        {/* Loading spinner */}
+        {loading && (
+          <div className="bg-white border border-slate-200 rounded-xl p-12 text-center text-slate-400 text-sm shadow-sm">
+            <div className="animate-spin w-8 h-8 border-2 border-indigo-300 border-t-indigo-600 rounded-full mx-auto mb-3" />
+            Loading evaluation report...
           </div>
         )}
 
         {/* Report Display */}
-        {data && (
+        {!loading && data && sub && (
           <div className="space-y-6">
             {/* Summary Banner */}
             <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-3 flex-wrap">
-                    <h2 className="text-xl font-bold text-slate-900">{sub.team_name}</h2>
-                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      sub.submission_status === "EVALUATED" ? "bg-green-100 text-green-700" :
-                      sub.submission_status === "EVALUATION_FAILED" ? "bg-red-100 text-red-700" :
-                      "bg-yellow-100 text-yellow-700"
-                    }`}>
-                      {sub.submission_status}
+                    <h2 className="text-xl font-bold text-slate-900">{sub.team_name || "Unknown Team"}</h2>
+                    <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold ${statusColor(sub.submission_status)}`}>
+                      {sub.submission_status || "UNKNOWN"}
                     </span>
                     {details?.detected_language && (
                       <span className="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-0.5 rounded-full font-medium">
@@ -155,209 +180,303 @@ function EvaluationReport() {
                     )}
                   </div>
                   <p className="text-xs text-slate-500 mt-1">
-                    Hackathon: <strong>{sub.hackathon_name}</strong> ({sub.contest_id}) · Problem: <strong>{sub.problem_title}</strong>
+                    Hackathon: <strong>{sub.hackathon_name || "—"}</strong>
+                    {sub.contest_id ? ` (${sub.contest_id})` : ""}
+                    {sub.problem_title ? ` · Problem: ` : ""}
+                    {sub.problem_title && <strong>{sub.problem_title}</strong>}
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5 font-mono">
-                    Submission Code: {sub.submission_id} · File: {sub.file_name}
+                    Code: {sub.submission_id || "—"} · File: {sub.file_name || "—"}
                   </p>
                 </div>
 
                 <div className="text-right flex flex-col items-end">
                   <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 text-white rounded-2xl px-6 py-3 shadow-md text-center">
-                    <p className="text-3xl font-extrabold">{evalRow?.total_score != null ? Number(evalRow.total_score).toFixed(1) : "—"}</p>
+                    <p className="text-3xl font-extrabold">
+                      {evalRow?.total_score != null ? Number(evalRow.total_score).toFixed(1) : "—"}
+                    </p>
                     <p className="text-[11px] text-indigo-200 font-medium">Total Weighted Score / 100</p>
                   </div>
                   <button
                     onClick={handleReEvaluate}
                     disabled={reEvaluating}
-                    className="mt-3 text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                    className="mt-3 text-xs text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1 disabled:opacity-50"
                   >
-                    <span>🔄</span> {reEvaluating ? "Re-evaluating with C++..." : "Re-run Evaluation"}
+                    <span>🔄</span>
+                    {reEvaluating ? "Re-evaluating with C++..." : "Re-run Evaluation"}
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Two Integrated Active Criteria */}
-            <div className="grid md:grid-cols-2 gap-6">
-              {/* Functionality (30%) */}
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">⚡</span>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-base">Functionality</h3>
-                      <p className="text-xs text-slate-400">Weight: 30% of final score</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-green-700">
-                      {evalRow?.functionality_weighted != null ? Number(evalRow.functionality_weighted).toFixed(1) : "0.0"}
-                      <span className="text-xs text-slate-400 font-normal"> / 30.0</span>
+            {/* ── EVALUATION FAILED / MISSING STATE ── */}
+            {!evalRow && (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 shadow-sm">
+                <div className="flex items-start gap-4">
+                  <span className="text-3xl">⚠️</span>
+                  <div className="flex-1">
+                    <h3 className="font-semibold text-amber-800 text-base mb-1">No Evaluation Data Available</h3>
+                    <p className="text-sm text-amber-700 mb-4">
+                      This submission was not successfully evaluated. This may have happened because the backend
+                      restarted during evaluation. Click the button below to re-run the C++ evaluation engine.
                     </p>
-                    <p className="text-xs text-slate-500">Raw: {evalRow?.functionality_raw != null ? Number(evalRow.functionality_raw).toFixed(1) : "0.0"}%</p>
+                    <button
+                      onClick={handleReEvaluate}
+                      disabled={reEvaluating}
+                      className="bg-amber-600 hover:bg-amber-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {reEvaluating ? (
+                        <>
+                          <span className="animate-spin inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                          Running C++ evaluator...
+                        </>
+                      ) : (
+                        <>🔄 Re-run Evaluation Now</>
+                      )}
+                    </button>
                   </div>
                 </div>
-
-                <div className="mt-4 space-y-3 text-xs">
-                  <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
-                    <span className="text-slate-600 font-medium">Test Pass Rate:</span>
-                    <span className="font-semibold text-slate-900">{func?.test_pass_rate?.toFixed(1) ?? "0.0"}% ({func?.passed_tests ?? 0}/{func?.total_tests ?? 0} tests passed)</span>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
-                    <span className="text-slate-600 font-medium">Feature Completion:</span>
-                    <span className="font-semibold text-slate-900">{func?.feature_completion?.toFixed(1) ?? "0.0"}%</span>
-                  </div>
-                  <p className="text-slate-400 italic">Formula: (Test Pass Rate × 0.60) + (Feature Completion × 0.40)</p>
-
-                  {func?.features && (
-                    <div className="mt-4">
-                      <p className="font-semibold text-slate-700 mb-2">Automated Architecture & Feature Verification:</p>
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {func.features.map((feat) => (
-                          <div key={feat.name} className="flex items-start gap-2 bg-slate-50 p-2 rounded border border-slate-100">
-                            <span className={feat.status ? "text-green-600 font-bold" : "text-slate-400"}>
-                              {feat.status ? "✓" : "✗"}
-                            </span>
-                            <div className="flex-1">
-                              <p className={`font-medium ${feat.status ? "text-slate-800" : "text-slate-400"}`}>{feat.name}</p>
-                              <p className="text-[11px] text-slate-500">{feat.evidence}</p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Code Quality (15%) */}
-              <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-                <div className="flex items-center justify-between pb-4 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="text-2xl">🔍</span>
-                    <div>
-                      <h3 className="font-bold text-slate-900 text-base">Code Quality</h3>
-                      <p className="text-xs text-slate-400">Weight: 15% of final score</p>
-                    </div>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-2xl font-bold text-blue-700">
-                      {evalRow?.code_quality_weighted != null ? Number(evalRow.code_quality_weighted).toFixed(1) : "0.0"}
-                      <span className="text-xs text-slate-400 font-normal"> / 15.0</span>
-                    </p>
-                    <p className="text-xs text-slate-500">Raw: {evalRow?.code_quality_raw != null ? Number(evalRow.code_quality_raw).toFixed(1) : "0.0"}%</p>
-                  </div>
-                </div>
-
-                <div className="mt-4 space-y-3 text-xs">
-                  <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
-                    <span className="text-slate-600 font-medium">Cyclomatic Complexity:</span>
-                    <span className="font-semibold text-slate-900">{cq?.cyclomatic?.score?.toFixed(1) ?? "0.0"}% (Avg: {cq?.cyclomatic?.average_complexity?.toFixed(1) ?? "—"})</span>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
-                    <span className="text-slate-600 font-medium">Duplication Analysis:</span>
-                    <span className="font-semibold text-slate-900">{cq?.duplication?.score?.toFixed(1) ?? "0.0"}% ({cq?.duplication?.duplication_percentage?.toFixed(1) ?? "0.0"}% duplication)</span>
-                  </div>
-                  <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
-                    <span className="text-slate-600 font-medium">Static AST Findings:</span>
-                    <span className="font-semibold text-slate-900">{cq?.static_analysis?.score?.toFixed(1) ?? "0.0"}% ({cq?.static_analysis?.findings_count ?? 0} flags)</span>
-                  </div>
-                  <p className="text-slate-400 italic">Formula: (Cyclomatic × 0.40) + (Duplication × 0.30) + (Static Analysis × 0.30)</p>
-
-                  {cq?.static_analysis?.findings && cq.static_analysis.findings.length > 0 && (
-                    <div className="mt-4">
-                      <p className="font-semibold text-slate-700 mb-2">Static Analysis Warnings:</p>
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {cq.static_analysis.findings.slice(0, 6).map((finding, idx) => (
-                          <div key={idx} className="bg-slate-50 p-2 rounded border border-slate-100 text-[11px]">
-                            <span className="font-medium text-amber-700">{finding.type}: </span>
-                            <span className="text-slate-700">{finding.issue}</span>
-                            <span className="text-slate-400 block font-mono">{finding.file}:{finding.line}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Complete 9-Criteria Rubric Table */}
-            <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-semibold text-slate-800 text-sm">Full 9-Criteria Rubric Breakdown</h3>
-                  <p className="text-xs text-slate-400">Total Score Weight: 100%</p>
-                </div>
-              </div>
-
-              <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
-                  <tr>
-                    <th className="px-5 py-3 text-left">Criterion</th>
-                    <th className="px-5 py-3 text-left">Weight</th>
-                    <th className="px-5 py-3 text-left">Assessment Method</th>
-                    <th className="px-5 py-3 text-left">Raw Score</th>
-                    <th className="px-5 py-3 text-left">Weighted Score</th>
-                    <th className="px-5 py-3 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs">
-                  {ALL_CRITERIA.map((crit) => {
-                    let raw = "—";
-                    let weighted = "—";
-                    let statusBadge = <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">Pending Review</span>;
-                    let method = "Judge Review";
-
-                    if (crit.name === "Functionality") {
-                      method = "C++ Test & AST Engine";
-                      if (evalRow?.functionality_weighted != null) {
-                        raw = `${Number(evalRow.functionality_raw).toFixed(1)}%`;
-                        weighted = `${Number(evalRow.functionality_weighted).toFixed(1)} / 30.0`;
-                        statusBadge = <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">Automated</span>;
-                      }
-                    } else if (crit.name === "Code Quality") {
-                      method = "C++ AST & Complexity Engine";
-                      if (evalRow?.code_quality_weighted != null) {
-                        raw = `${Number(evalRow.code_quality_raw).toFixed(1)}%`;
-                        weighted = `${Number(evalRow.code_quality_weighted).toFixed(1)} / 15.0`;
-                        statusBadge = <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Automated</span>;
-                      }
-                    } else if (evalRow?.[`${crit.name.toLowerCase().replace(/[\s/]/g, "_")}_score`] != null) {
-                      const manualVal = Number(evalRow[`${crit.name.toLowerCase().replace(/[\s/]/g, "_")}_score`]);
-                      raw = `${(manualVal / 20 * 100).toFixed(1)}%`;
-                      weighted = `${manualVal.toFixed(1)} / 20.0`;
-                      statusBadge = <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">Judged</span>;
-                    }
-
-                    return (
-                      <tr key={crit.name} className="hover:bg-slate-50 transition-colors">
-                        <td className="px-5 py-3.5 font-medium text-slate-800 flex items-center gap-2">
-                          <span>{crit.icon}</span>
-                          <span>{crit.name}</span>
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-600">{crit.weight}%</td>
-                        <td className="px-5 py-3.5 text-slate-500">{method}</td>
-                        <td className="px-5 py-3.5 font-medium text-slate-700">{raw}</td>
-                        <td className="px-5 py-3.5 font-bold text-indigo-700">{weighted}</td>
-                        <td className="px-5 py-3.5">{statusBadge}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Evaluator Notes and Feedback */}
-            {evalRow?.feedback && (
-              <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
-                <h4 className="text-sm font-semibold text-slate-800 mb-2">Evaluator Feedback</h4>
-                <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100 font-mono">
-                  {evalRow.feedback}
-                </p>
               </div>
             )}
+
+            {/* ── EVALUATION RESULTS (only when evalRow exists) ── */}
+            {evalRow && (
+              <>
+                {/* Two Integrated Active Criteria */}
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* Functionality (30%) */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">⚡</span>
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-base">Functionality</h3>
+                          <p className="text-xs text-slate-400">Weight: 30% of final score</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-green-700">
+                          {evalRow.functionality_weighted != null ? Number(evalRow.functionality_weighted).toFixed(1) : "0.0"}
+                          <span className="text-xs text-slate-400 font-normal"> / 30.0</span>
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Raw: {evalRow.functionality_raw != null ? Number(evalRow.functionality_raw).toFixed(1) : "0.0"}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3 text-xs">
+                      <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
+                        <span className="text-slate-600 font-medium">Test Pass Rate:</span>
+                        <span className="font-semibold text-slate-900">
+                          {func?.test_pass_rate?.toFixed(1) ?? "0.0"}%
+                          ({func?.passed_tests ?? 0}/{func?.total_tests ?? 0} tests passed)
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
+                        <span className="text-slate-600 font-medium">Feature Completion:</span>
+                        <span className="font-semibold text-slate-900">
+                          {func?.feature_completion?.toFixed(1) ?? "0.0"}%
+                        </span>
+                      </div>
+                      <p className="text-slate-400 italic">Formula: (Test Pass Rate × 0.60) + (Feature Completion × 0.40)</p>
+
+                      {Array.isArray(func?.features) && func.features.length > 0 && (
+                        <div className="mt-4">
+                          <p className="font-semibold text-slate-700 mb-2">Automated Architecture & Feature Verification:</p>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {func.features.map((feat, i) => (
+                              <div key={feat?.name || i} className="flex items-start gap-2 bg-slate-50 p-2 rounded border border-slate-100">
+                                <span className={feat?.status ? "text-green-600 font-bold" : "text-slate-400"}>
+                                  {feat?.status ? "✓" : "✗"}
+                                </span>
+                                <div className="flex-1">
+                                  <p className={`font-medium ${feat?.status ? "text-slate-800" : "text-slate-400"}`}>{feat?.name}</p>
+                                  <p className="text-[11px] text-slate-500">{feat?.evidence}</p>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Code Quality (15%) */}
+                  <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
+                    <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">🔍</span>
+                        <div>
+                          <h3 className="font-bold text-slate-900 text-base">Code Quality</h3>
+                          <p className="text-xs text-slate-400">Weight: 15% of final score</p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-2xl font-bold text-blue-700">
+                          {evalRow.code_quality_weighted != null ? Number(evalRow.code_quality_weighted).toFixed(1) : "0.0"}
+                          <span className="text-xs text-slate-400 font-normal"> / 15.0</span>
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          Raw: {evalRow.code_quality_raw != null ? Number(evalRow.code_quality_raw).toFixed(1) : "0.0"}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 space-y-3 text-xs">
+                      <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
+                        <span className="text-slate-600 font-medium">Cyclomatic Complexity:</span>
+                        <span className="font-semibold text-slate-900">
+                          {cq?.cyclomatic?.score?.toFixed(1) ?? "0.0"}%
+                          {cq?.cyclomatic?.average_complexity != null ? ` (Avg: ${cq.cyclomatic.average_complexity.toFixed(1)})` : ""}
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
+                        <span className="text-slate-600 font-medium">Duplication Analysis:</span>
+                        <span className="font-semibold text-slate-900">
+                          {cq?.duplication?.score?.toFixed(1) ?? "0.0"}%
+                          {cq?.duplication?.duplication_percentage != null
+                            ? ` (${cq.duplication.duplication_percentage.toFixed(1)}% duplication)`
+                            : ""}
+                        </span>
+                      </div>
+                      <div className="bg-slate-50 p-3 rounded-lg flex justify-between">
+                        <span className="text-slate-600 font-medium">Static AST Findings:</span>
+                        <span className="font-semibold text-slate-900">
+                          {cq?.static_analysis?.score?.toFixed(1) ?? "0.0"}%
+                          {cq?.static_analysis?.findings_count != null ? ` (${cq.static_analysis.findings_count} flags)` : ""}
+                        </span>
+                      </div>
+                      <p className="text-slate-400 italic">
+                        Formula: (Cyclomatic × 0.40) + (Duplication × 0.30) + (Static Analysis × 0.30)
+                      </p>
+
+                      {Array.isArray(cq?.static_analysis?.findings) && cq.static_analysis.findings.length > 0 && (
+                        <div className="mt-4">
+                          <p className="font-semibold text-slate-700 mb-2">Static Analysis Warnings:</p>
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {cq.static_analysis.findings.slice(0, 6).map((finding, idx) => (
+                              <div key={idx} className="bg-slate-50 p-2 rounded border border-slate-100 text-[11px]">
+                                <span className="font-medium text-amber-700">{finding?.type}: </span>
+                                <span className="text-slate-700">{finding?.issue}</span>
+                                <span className="text-slate-400 block font-mono">{finding?.file}:{finding?.line}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Complete 9-Criteria Rubric Table */}
+                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-slate-800 text-sm">Full 9-Criteria Rubric Breakdown</h3>
+                      <p className="text-xs text-slate-400">Total Score Weight: 100%</p>
+                    </div>
+                  </div>
+
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                      <tr>
+                        <th className="px-5 py-3 text-left">Criterion</th>
+                        <th className="px-5 py-3 text-left">Weight</th>
+                        <th className="px-5 py-3 text-left">Assessment Method</th>
+                        <th className="px-5 py-3 text-left">Raw Score</th>
+                        <th className="px-5 py-3 text-left">Weighted Score</th>
+                        <th className="px-5 py-3 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs">
+                      {ALL_CRITERIA.map((crit) => {
+                        let raw = "—";
+                        let weighted = "—";
+                        let statusBadge = (
+                          <span className="bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full font-medium">
+                            Pending Review
+                          </span>
+                        );
+                        let method = "Judge Review";
+
+                        if (crit.name === "Functionality") {
+                          method = "C++ Test & AST Engine";
+                          if (evalRow?.functionality_weighted != null) {
+                            raw = `${Number(evalRow.functionality_raw || 0).toFixed(1)}%`;
+                            weighted = `${Number(evalRow.functionality_weighted).toFixed(1)} / 30.0`;
+                            statusBadge = (
+                              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
+                                Automated
+                              </span>
+                            );
+                          }
+                        } else if (crit.name === "Code Quality") {
+                          method = "C++ AST & Complexity Engine";
+                          if (evalRow?.code_quality_weighted != null) {
+                            raw = `${Number(evalRow.code_quality_raw || 0).toFixed(1)}%`;
+                            weighted = `${Number(evalRow.code_quality_weighted).toFixed(1)} / 15.0`;
+                            statusBadge = (
+                              <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">
+                                Automated
+                              </span>
+                            );
+                          }
+                        } else {
+                          const key = `${crit.name.toLowerCase().replace(/[\s/]/g, "_")}_score`;
+                          const manualVal = evalRow?.[key];
+                          if (manualVal != null) {
+                            const mv = Number(manualVal);
+                            raw = `${((mv / 20) * 100).toFixed(1)}%`;
+                            weighted = `${mv.toFixed(1)} / 20.0`;
+                            statusBadge = (
+                              <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">
+                                Judged
+                              </span>
+                            );
+                          }
+                        }
+
+                        return (
+                          <tr key={crit.name} className="hover:bg-slate-50 transition-colors">
+                            <td className="px-5 py-3.5 font-medium text-slate-800">
+                              <span className="mr-2">{crit.icon}</span>
+                              {crit.name}
+                            </td>
+                            <td className="px-5 py-3.5 text-slate-600">{crit.weight}%</td>
+                            <td className="px-5 py-3.5 text-slate-500">{method}</td>
+                            <td className="px-5 py-3.5 font-medium text-slate-700">{raw}</td>
+                            <td className="px-5 py-3.5 font-bold text-indigo-700">{weighted}</td>
+                            <td className="px-5 py-3.5">{statusBadge}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Evaluator Feedback */}
+                {evalRow.feedback && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <h4 className="text-sm font-semibold text-slate-800 mb-2">Evaluator Feedback</h4>
+                    <p className="text-xs text-slate-600 leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100 font-mono whitespace-pre-wrap">
+                      {evalRow.feedback}
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Empty state (no data yet, not loading) */}
+        {!loading && !data && !error && (
+          <div className="bg-white border border-dashed border-slate-300 rounded-xl p-16 text-center shadow-sm">
+            <p className="text-4xl mb-4">📋</p>
+            <h3 className="text-slate-700 font-semibold text-base mb-1">No Report Loaded</h3>
+            <p className="text-slate-400 text-sm">
+              Enter your Submission ID above and click <strong>Load Report</strong>.
+            </p>
           </div>
         )}
       </div>
