@@ -17,9 +17,7 @@
 #include <utility>
 #include <vector>
 
-// ============================================================================
 // Helper Utilities for JSON and String Processing
-// ============================================================================
 namespace utils {
     inline std::string trim(const std::string& str) {
         size_t first = str.find_first_not_of(" \t\r\n");
@@ -504,10 +502,8 @@ protected:
     double weight_;
 };
 
-// ============================================================================
 // Concrete Criterion: Functionality Evaluator (30% weight)
 // Formula: Functionality = (Test Pass Rate * 0.60) + (Feature Completion * 0.40)
-// ============================================================================
 struct FeatureItem {
     std::string name;
     bool implemented = false;
@@ -826,9 +822,7 @@ private:
     std::vector<std::unique_ptr<EvaluationCriterion>> criteria_;
 };
 
-// ============================================================================
 // Main Entry Point
-// ============================================================================
 int main(int argc, char** argv) {
     if (argc < 2) {
         std::cerr << "Usage: evaluator.exe <project_directory> [manifest_file]\n";
